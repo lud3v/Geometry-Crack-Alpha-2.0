@@ -504,6 +504,7 @@ while run:
         screen.blit(title_vid_surface, (0, 1))
         draw_text("Geometry Crack", 130, def_col, MIN_SCREEN_WIDTH / 2, 100)
         col_change(def_col, col_dir)
+        draw_text("Version: Alpha 2.0", 20, white, 90, 485)
 
     if game_state == OPTIONS:
         draw_text("Volume", 20, white, 614, grid_top_height)

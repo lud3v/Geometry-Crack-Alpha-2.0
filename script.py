@@ -5,45 +5,141 @@ import pygame, pygame_gui, pygame.transform
 import moviepy.editor as mp
 import threading
 
-
 pygame.init()
 
-# Screen Setup
+# Constants
+
 MIN_SCREEN_WIDTH = 1000
 MIN_SCREEN_HEIGHT = 500
+
+# Ground Configuration
+GROUND_HEIGHT = 20
+GROUND_WIDTH = MIN_SCREEN_WIDTH  # Set ground width to match screen width
+ground_y = MIN_SCREEN_HEIGHT - GROUND_HEIGHT
+ground_color = (0, 0, 255)  # Blue
+
+# Obstacle Configuration
+OBSTACLE_WIDTH = 20
+OBSTACLE_HEIGHT = 65
+OBSTACLE_SPEED = 9
+TRIGGERED_OBSTACLE_COLOR = (222, 0, 255)
+TRIGGERED_STAY_COLOR = (0, 255, 0)
+DEFAULT_OBSTACLE_COLOR = (255, 0, 0)
+MINIMUM_RANGE = [1500, 1800, 2000, 2500]
+JUMP_OVER = 0
+DUCK_UNDER = 1
+STAY_STILL = 2
+
+COOLDOWN_TIME = 300
+last_button_click_time = 0
+previous_slider_value = None
+
+# colour
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+
+# lgbtq+ Title
+COL_SPD = 10
+COL_DIR= [-1, 1, -1]
+DEF_COL = [50, 100, 255]
+MINIMUM = 20
+MAXIMUM = 200
+
+# Screen Setup
 screen = pygame.display.set_mode((MIN_SCREEN_WIDTH, MIN_SCREEN_HEIGHT))
 pygame.display.set_caption("Geometry Crack")
 
-# Create UI manager
+# UI Manager
 ui_manager = pygame_gui.UIManager((MIN_SCREEN_WIDTH, MIN_SCREEN_HEIGHT))
 
-# Title video
-title_vid = mp.VideoFileClip("title_screen.mp4")
+# Font 
+font = pygame.font.Font(None, 36)  # Choose font and size
 
-# Music
-current_volume = 0.1
+# save and load Song volume
+def save_volume(volume, volume_slider_position):
+    try:
+        with open('data.json', 'r') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        data = {}
+
+    data['Music_Volume'] = round(volume, 1)
+    data['volume_slider_position'] = round(volume_slider_position, 1)
+
+    with open('data.json', 'w') as f:
+        json.dump(data, f)
+
+def load_volume():
+    try:
+        with open('data.json', 'r') as f:
+            return json.load(f).get('Music_Volume', 0.1)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return 0.1
+
+def save_sound_volume(volume, sound_slider_position):
+    try:
+        with open('data.json', 'r') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        data = {}
+
+    data['Sound_Volume'] = round(volume, 1)
+    data['sound_slider_position'] = round(sound_slider_position, 1)
+
+    with open('data.json', 'w') as f:
+        json.dump(data, f)
+
+def load_sound_volume():
+    try:
+        with open('data.json', 'r') as f:
+            return json.load(f).get('Sound_Volume', 0.1)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return 0.1
+    
+# Sound settings
+SOUND_VOLUME = 0.1
+CURRENT_VOLUME = 0.1
+
 music = pygame.mixer.music.load('./Music/song1.mp3')
 pygame.mixer.music.play(-1)
-pygame.mixer.music.set_volume(current_volume)
+pygame.mixer.music.set_volume(CURRENT_VOLUME)
 
-# Sound effects
-sound_volume = 0.1
-fu_sound = pygame.mixer.Sound('./Sounds/f_u.mp3')
-fu_sound.set_volume(1)
-button_click = pygame.mixer.Sound('./Sounds/click.mp3')
-death = pygame.mixer.Sound('./Sounds/death.mp3')
-jump = pygame.mixer.Sound('./Sounds/boing.mp3')
+# Load initial Soundvolume
+SOUND_VOLUME = load_sound_volume()
 
-# Game Constants
-run = True
-clock = pygame.time.Clock()
+sound_effects = {
+    'fu_sound': pygame.mixer.Sound('./Sounds/f_u.mp3'),
+    'button_click': pygame.mixer.Sound('./Sounds/click.mp3'),
+    'death': pygame.mixer.Sound('./Sounds/death.mp3'),
+    'jump': pygame.mixer.Sound('./Sounds/boing.mp3')
+}
 
-title_vid_width, title_vid_height = title_vid.size
-title_vid_surface = pygame.Surface((title_vid_width, title_vid_height))
+for sound in sound_effects:
+    sound_obj = sound_effects[sound]
+    sound_obj.set_volume(SOUND_VOLUME) 
+    globals()[sound] = sound_obj
 
-#vid
+
+# Title video
 TARGET_WIDTH = MIN_SCREEN_WIDTH
 TARGET_HEIGHT = MIN_SCREEN_HEIGHT
+title_vid = mp.VideoFileClip("title_screen.mp4")
+title_vid_width, title_vid_height = title_vid.size
+title_vid_surface = pygame.Surface((title_vid.size))
+
+# Player Configuration
+player_config = {
+    'normal_width': 40,
+    'normal_height': 40,
+    'duck_width': 40,
+    'duck_height': 10,
+    'player_x': 50,
+    'player_color': (255, 255, 255),
+    'player_velocity': 0,
+    'jump_force': -15,
+    'gravity': 1,
+    'is_ducking': False
+}
 
 def update_video():
     global t, run
@@ -64,33 +160,14 @@ def display_frame(t):
     title_vid_surface.blit(scaled_surface, (0, 0))
 
 
-# save and load volume
-def save_volume(volume, slider_position):
-    try:
-        with open('data.json', 'r') as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        data = {}
-
-    data['volume'] = round(volume, 1)
-    data['slider_position'] = round(slider_position, 1)
-
-    with open('data.json', 'w') as f:
-        json.dump(data, f)
-
-def load_volume():
-    try:
-        with open('data.json', 'r') as f:
-            return json.load(f).get('volume', 0.1)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return 0.1
-
 # Load initial Volume
 current_volume = load_volume()
 pygame.mixer.music.set_volume(current_volume)
-slider_position = int(current_volume * 10) # convert volume to slider position
+volume_slider_position = int(current_volume * 10) # convert volume to slider position
 
-
+# load initial Soundvolume
+SOUND_VOLUME = load_sound_volume()
+sound_slider_position = int(SOUND_VOLUME * 10)
 
 # Score saving
 def save_high_score(score):
@@ -131,37 +208,18 @@ def load_recent_score():
     except (FileNotFoundError, json.JSONDecodeError):
         return 0
 
-# Player Configuration
-normal_width = 40
-normal_height = 40
-duck_width = 40  # Width when ducking
-duck_height = 10  # Height when ducking
-player_size = (normal_width, normal_height)  # Default player size
-player_x = 50
-player_y = MIN_SCREEN_HEIGHT - normal_height  # Ground level
-player_color = (255, 255, 255)  # White
-player_velocity = 0
-jump_force = -15
-gravity = 1
-is_ducking = False  # State to track ducking
+# Animation Configuration
+animation_config = {
+    'animation_speed' : 3,
+    'animation_trigger_distance' : 285,  # Distance to trigger "Duck Under" animation
+    'animation_target_y' : ground_y - 380  # Final height for duck under
+}
+# Color change for Stay Stil obj
+stay_config = {
+    'color_change_distance' : 320,
+    'triggered_height' : 150
+}
 
-# Ground Configuration
-ground_height = 20
-ground_width = MIN_SCREEN_WIDTH  # Set ground width to match screen width
-ground_y = MIN_SCREEN_HEIGHT - ground_height
-ground_color = (0, 0, 255)  # Blue
-
-# Obstacle Configuration
-OBSTACLE_WIDTH = 20
-OBSTACLE_HEIGHT = 65
-OBSTACLE_SPEED = 9
-TRIGGERED_OBSTACLE_HEIGHT = 120
-TRIGGERED_OBSTACLE_COLOR = (222, 0, 255)
-DEFAULT_OBSTACLE_COLOR = (255, 0, 0)
-
-# Obstacle Types
-JUMP_OVER = 0
-DUCK_UNDER = 1
 
 # Define obstacle positions based on type
 def set_obstacle_position(obstacle_type):
@@ -169,29 +227,27 @@ def set_obstacle_position(obstacle_type):
         return ground_y - OBSTACLE_HEIGHT  # Ground level for "Jump Over"
     elif obstacle_type == DUCK_UNDER:
         return ground_y - OBSTACLE_HEIGHT  # Ground level at start, then moves up if triggered
-
-# Animation Configuration
-animation_speed = 3
-animation_trigger_distance = 285  # Distance to trigger "Duck Under" animation
-animation_target_y = ground_y - 380  # Final height for duck under
+    elif obstacle_type == STAY_STILL:
+        return ground_y - OBSTACLE_HEIGHT
 
 # Reset Function
 def reset_game():
     global player_x, player_y, player_velocity, player_size, is_ducking, obstacles, score, recent_score
     player_x = 50
-    player_y = MIN_SCREEN_HEIGHT - normal_height  # Ground level
+    player_y = MIN_SCREEN_HEIGHT - player_config['normal_height']  # Ground level
     player_velocity = 0
-    player_size = (normal_width, normal_height)  # Default size
+    player_size = (player_config['normal_width'], player_config['normal_width'])  # Default size
     is_ducking = False  # Reset ducking state
     obstacles = []
-    obstacle_type = random.choice([JUMP_OVER, DUCK_UNDER])
+    obstacle_type = random.choice([JUMP_OVER, DUCK_UNDER, STAY_STILL])
     obstacle_color = DEFAULT_OBSTACLE_COLOR
     new_obstacle = {
         "x": random.randint(MIN_SCREEN_WIDTH, MIN_SCREEN_WIDTH + 300),
         "type": obstacle_type,
         "y": set_obstacle_position(obstacle_type),
         "color": obstacle_color,
-        "is_moving": False
+        "is_moving": False,
+        "height": OBSTACLE_HEIGHT
     }
     obstacles.append(new_obstacle)
     recent_score = load_recent_score()
@@ -207,29 +263,15 @@ pygame.display.set_icon(Icon)
 overlay_image = pygame.image.load('rührei.png')
 overlay_image = pygame.transform.scale(overlay_image, (MIN_SCREEN_WIDTH, MIN_SCREEN_HEIGHT))
 
-# Font Configuration
-font = pygame.font.Font(None, 36)  # Choose font and size
-
-# colour
-black = (0, 0, 0)
-white = (255, 255, 255)
-
-
-# lgbtq+ Title
-col_spd = 3
-col_dir= [-1, 1, -1]
-def_col = [50, 100, 255]
-
-# Score Variables
-score = 0
+# Score Loading
 high_score = load_high_score()
 recent_score = load_recent_score()
 
-# Flag to track whether the overlay should be shown
+# Flag to track whether rührei.png is shown
 show_overlay = False
 
-# Setting Variables
-grid_top_height = 162
+# xy Variables for buttons/sliders
+volume_slidersx= 650
 
 # Game states
 MAIN_MENU = 0
@@ -238,10 +280,9 @@ PLAYING = 2
 PAUSED = 3
 QUIT = 4
 
-
+    
 
 game_state = MAIN_MENU
-
 # Title
 def draw_text(text, size, col, x, y):
     font = "Ldfcomicsans-jj7l.ttf"
@@ -251,117 +292,121 @@ def draw_text(text, size, col, x, y):
     text_rect.center = (x, y)
     screen.blit(text_surface, text_rect)
 
-# lgbtq+ 
-minimum = 20
-maximum = 200
 
 def col_change(color: list, direction: list) -> None:
     for i in range(3):
-        color[i] += col_spd * direction[i]
-        if color[i] >= maximum or color[i] <= minimum:
+        color[i] += COL_SPD * direction[i]
+        if color[i] >= MAXIMUM or color[i] <= MINIMUM:
             direction[i] *= -1
-        if color[i] >= maximum:
-            color[i] = maximum
-        elif color[i] <= minimum:
-            color[i] = minimum
+        if color[i] >= MAXIMUM:
+            color[i] = MAXIMUM
+        elif color[i] <= MINIMUM:
+            color[i] = MINIMUM
+
+
+# Function to create and hide a button
+def create_hidden_button(rect, text, manager):
+    button = pygame_gui.elements.UIButton(relative_rect=rect, text=text, manager=manager)
+    button.hide()
+    return button
+
+# Function to create and hide a slider
+def create_hidden_slider(rect, start_value, value_range, manager):
+    slider = pygame_gui.elements.UIHorizontalSlider(relative_rect=rect, start_value=start_value, value_range=value_range, manager=manager)
+    slider.hide()
+    return slider
 
 # Main Buttons
-start_button = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((350, 190), (300, 50)),
-                                            text='START',
-                                            manager=ui_manager)
-
-
-options_button = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((350, 250), (300, 50)),
-                                           text='OPTIONS',
-                                           manager=ui_manager)
-
-quit_button = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((350, 310), (300, 50)),
-                                           text='QUIT',
-                                           manager=ui_manager)
-
-back_main_button = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((80, 30), (100, 50)),
-                                           text='BACK',
-                                           manager=ui_manager)
-back_main_button.hide()
-
+start_button = create_hidden_button(pygame.Rect((350, 190), (300, 50)), 'START', ui_manager)
+start_button.show()
+quit_button = create_hidden_button(pygame.Rect((350, 310), (300, 50)), 'QUIT', ui_manager)
+quit_button.show()
+options_button = create_hidden_button(pygame.Rect((350, 250), (300, 50)), 'OPTIONS', ui_manager)
+options_button.show()
+back_main_button = create_hidden_button(pygame.Rect((80, 30), (100, 50)), 'QUIT', ui_manager)
 # Pause Buttons
-higher_options_button = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((350, 160), (300, 50)),
-                                           text='OPTIONS',
-                                           manager=ui_manager)
-higher_options_button.hide()
-
-back_game_button = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((80, 30), (100, 50)),
-                                           text='BACK',
-                                           manager=ui_manager)
-back_game_button.hide()
-
-resume_button = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((350, 100), (300, 50)),
-                                             text='RESUME',
-                                             manager=ui_manager)
-resume_button.hide()
-
-menu_button = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((350, 220), (300, 50)),
-                                           text='BACK TO MENU',
-                                           manager=ui_manager)
-menu_button.hide()
-
+higher_options_button = create_hidden_button(pygame.Rect((350, 160), (300, 50)), 'OPTIONS', ui_manager)
+back_game_button = create_hidden_button(pygame.Rect((80, 30), (100, 50)), 'BACK', ui_manager)
+resume_button = create_hidden_button(pygame.Rect((350, 100), (300, 50)), 'RESUME', ui_manager)
+menu_button = create_hidden_button(pygame.Rect((350, 220), (300, 50)), 'BACK TO MENU', ui_manager)
 
 # Volume Slider
-volume_slider = pygame_gui.elements.UIHorizontalSlider(relative_rect=pygame.Rect((650, 150), (140, 20)),
-                                                       start_value=current_volume * 10, value_range=(0, 10),
-                                                       manager=ui_manager)
-volume_slider.hide()
+volume_slider = create_hidden_slider(pygame.Rect((volume_slidersx, 150), (140, 20)), current_volume * 10, (0, 10), ui_manager)
 
+# Sound Slider
+sound_slider = create_hidden_slider(pygame.Rect((volume_slidersx, 180), (140, 20)), SOUND_VOLUME * 10, (0, 10), ui_manager)
+
+# Initialize Game
+run = True
+clock = pygame.time.Clock()
+score = 0
 
 
 #Timer Variables
 t = 0.0
 dt = 1 / 30.0
 
-
+    
 # Main Game Loop
 while run:
     time_delta = clock.tick(60) / 1000.0  # Convert milliseconds to seconds
     t += dt
 
+    screen.fill(BLACK)
+
     # Event handling
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
              run = False
+        ui_manager.process_events(event)
         if event.type == pygame.USEREVENT:
             if event.user_type == pygame_gui.UI_BUTTON_PRESSED:
-                if event.ui_element == start_button or event.ui_element == quit_button or event.ui_element == options_button or event.ui_element == higher_options_button or event.ui_element == back_main_button or event.ui_element == back_game_button or event.ui_element == resume_button or event.ui_element == menu_button:
-                    button_click.play()                
+                buttons = [start_button, quit_button, options_button, higher_options_button, back_main_button, back_game_button, resume_button, menu_button]
+
+                if event.ui_element in buttons:
+                    sound_effects['button_click'].play()
+
                 if event.ui_element == start_button:
                     game_state = PLAYING
-                    pygame.time.delay(500)
                     score = 0
+                    reset_game()
+                    pygame.time.delay(500)
+                    
                 elif event.ui_element == options_button:
                     game_state = OPTIONS
                     volume_slider.show()
+                    sound_slider.show()
                     back_main_button.show()
+
                 elif event.ui_element == higher_options_button:
                     game_state = OPTIONS
                     volume_slider.show()
-                    back_game_button.show()                    
+                    sound_slider.show()
+                    back_game_button.show()     
+
                 elif event.ui_element == back_main_button:
                     game_state = MAIN_MENU
                     volume_slider.hide()
+                    sound_slider.hide()
                     back_main_button.hide()
+
                 elif event.ui_element == back_game_button:
                     game_state = PAUSED
                     volume_slider.hide()
+                    sound_slider.hide()
                     back_game_button.hide()
+
                 elif event.ui_element == resume_button:
                     game_state = PLAYING
                 elif event.ui_element == quit_button:      
                     game_state = QUIT
                     pygame.time.delay(500)
                     run = False
+
                 elif event.ui_element == menu_button:
                     game_state = MAIN_MENU
-                     
 
+             
                 if game_state == PLAYING:
                     start_button.visible = False
                     options_button.visible = False
@@ -369,13 +414,13 @@ while run:
                     quit_button.visible = False
                     menu_button.visible = False
                     higher_options_button.visible = False
-                    quit_button.visible = False
 
                 elif game_state == PAUSED:
                     menu_button.visible = True
                     resume_button.visible = True
                     higher_options_button.visible = True
-
+                    back_game_button.visible = False
+                    
                 elif game_state == MAIN_MENU:
                     resume_button.visible = False
                     menu_button.visible = False
@@ -385,7 +430,6 @@ while run:
                     quit_button.visible = True
 
                 elif game_state == OPTIONS:
-                    volume_slider.visible = True
                     menu_button.visible = False
                     resume_button.visible = False
                     higher_options_button.visible = False
@@ -393,11 +437,31 @@ while run:
                     options_button.visible = False
                     quit_button.visible = False
 
+
             if event.user_type == pygame_gui.UI_HORIZONTAL_SLIDER_MOVED:
                 if event.ui_element == volume_slider:
                     current_volume = event.value / 10.0
                     pygame.mixer.music.set_volume(current_volume)
                     save_volume(current_volume, event.value)
+                
+                if event.ui_element == sound_slider:
+                    SOUND_VOLUME = event.value / 10.0
+                    sound_effects['fu_sound'].set_volume(SOUND_VOLUME)
+                    sound_effects['button_click'].set_volume(SOUND_VOLUME)
+                    sound_effects['death'].set_volume(SOUND_VOLUME)
+                    sound_effects['jump'].set_volume(SOUND_VOLUME)
+                    current_time = pygame.time.get_ticks()
+                    save_sound_volume(SOUND_VOLUME, event.value)
+
+                    current_slider_value = event.value
+                    if previous_slider_value is None or current_slider_value != previous_slider_value:
+                        current_time = pygame.time.get_ticks()
+                        if current_time - last_button_click_time >= COOLDOWN_TIME:
+                            sound_effects['jump'].play()
+                            last_button_click_time = current_time
+                    # Update the previous slider value
+                    previous_slider_value = current_slider_value
+                    
     
         ui_manager.process_events(event)
 
@@ -412,15 +476,15 @@ while run:
     if game_state == PLAYING and game_state != PAUSED:
         # Handle player input
         keys = pygame.key.get_pressed()
-        if keys[pygame.K_SPACE] and not is_ducking and player_y >= ground_y - normal_height:
-            player_velocity = jump_force
-            jump.play()
+        if keys[pygame.K_SPACE] and not is_ducking and player_y >= ground_y - player_config['normal_height']:
+            player_velocity = player_config['jump_force']
+            sound_effects['jump'].play()
 
         elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
-            if player_y == ground_y - normal_height:
+            if player_y == ground_y - player_config['normal_height']:
                 is_ducking = True
-                player_size = (duck_width, duck_height)
-                player_y = ground_y - duck_height
+                player_size = (player_config['duck_width'], player_config['duck_height'])
+                player_y = ground_y - player_config['duck_height']
         
         elif keys[pygame.K_p]:
             if keys[pygame.K_a]:
@@ -430,108 +494,145 @@ while run:
 
         elif keys[pygame.K_m]:
             show_overlay = True
-            pygame.mixer.Sound.play(fu_sound)
-            pygame.mixer.Sound.set_volume(fu_sound, 1)
+            pygame.mixer.Sound.play(sound_effects['fu_sound'])
+
             
         elif event.type == pygame.KEYUP:
             if event.key == pygame.K_s or pygame.K_DOWN:
                 is_ducking = False
-                player_size = (normal_width, normal_height)
+                player_size = (player_config['normal_width'], player_config['normal_width'])
             elif event.key == pygame.K_m:
                 show_overlay = False
             
-
+        is_player_moving = keys[pygame.K_a] or keys[pygame.K_d] or keys[pygame.K_SPACE] or keys[pygame.K_s] or keys[pygame.K_DOWN]
+        
         # Update score
         score += 1 
-        # Definition of the minimum range
-        minimum_range = [1500, 1800, 2000, 2500]
-
+        
         # Gravity and player movement
-        player_velocity += gravity
+        player_velocity += player_config['gravity']
         player_y += player_velocity
         if player_y > ground_y - player_size[1]:  # Ground contact check
             player_y = ground_y - player_size[1]
             player_velocity = 0
 
+      
         # Obstacle creation and update
-        if len(obstacles) == 0 or MIN_SCREEN_WIDTH - obstacles[-1]["x"] >= random.choice(minimum_range):
-            obstacle_type = random.choice([JUMP_OVER, DUCK_UNDER])
+        new_obstacle = {}
+        if len(obstacles) == 0 or MIN_SCREEN_WIDTH - obstacles[-1].get("x", MIN_SCREEN_WIDTH) >= random.choice(MINIMUM_RANGE):
+            obstacle_type = random.choice([JUMP_OVER, DUCK_UNDER, STAY_STILL])
             obstacle_color = DEFAULT_OBSTACLE_COLOR
             new_obstacle = {
                 "x": MIN_SCREEN_WIDTH,
                 "type": obstacle_type,
                 "y": set_obstacle_position(obstacle_type),
                 "color": obstacle_color,
-                "is_moving": False
+                "is_moving": False,
+                "height": OBSTACLE_HEIGHT
             }
             obstacles.append(new_obstacle)
-
+        
         # Move obstacles
         for obstacle in obstacles:
+            # Move obstacles
             obstacle["x"] -= OBSTACLE_SPEED
-                    
-            if obstacle["type"] == DUCK_UNDER and obstacle["x"] - player_x <= animation_trigger_distance:
+
+            if obstacle["type"] == DUCK_UNDER and obstacle["x"] - player_x <= animation_config['animation_trigger_distance']:
                 obstacle["is_moving"] = True  # Trigger animation for duck under
                 obstacle["color"] = TRIGGERED_OBSTACLE_COLOR
-                
 
-            if obstacle["is_moving"] and obstacle["y"] > ground_y - animation_target_y:
-                obstacle["y"] -= animation_speed
+            if obstacle["is_moving"] and obstacle["y"] > ground_y - animation_config['animation_target_y']:
+                obstacle["y"] -= animation_config['animation_speed']
+
+            if obstacle["type"] == STAY_STILL and obstacle["x"] - player_x <= stay_config['color_change_distance']:
+                obstacle["color"] = TRIGGERED_STAY_COLOR
+                obstacle["y"] = ground_y - stay_config['triggered_height']  # Adjust position
+                obstacle["height"] = stay_config['triggered_height']  # Change height
 
             # Collision detection
             player_rect = pygame.Rect(player_x, player_y, player_size[0], player_size[1])
-            obstacle_rect = pygame.Rect(obstacle["x"], obstacle["y"], OBSTACLE_WIDTH, OBSTACLE_HEIGHT)
+            obstacle_rect = pygame.Rect(obstacle["x"], obstacle["y"], OBSTACLE_WIDTH, obstacle["height"])
 
             if player_rect.colliderect(obstacle_rect):  # Collision check
-                death.play()
-                save_recent_score(score)
-                recent_score = score  # Update recent_score before resetting
-                if score > high_score:
-                    high_score = score
-                    save_high_score(high_score)
-                score = 0
-                reset_game()
-                break
+                if obstacle["type"] == STAY_STILL:
+                    if not is_player_moving and not is_ducking and player_y >= ground_y - player_config['normal_height']:
+                        # Player is not moving, not ducking, and on the ground
+                        pass  # Player survives collision
+                    else:
+                        # Player is moving or ducking
+                        sound_effects['death'].play()
+                        save_recent_score(score)
+                        recent_score = score  # Update recent_score before resetting
+                        if score > high_score:
+                            high_score = score
+                            save_high_score(high_score)
+                        score = 0
+                        reset_game()
+                        break
+                else:
+                    # For other types of obstacles
+                    sound_effects['death'].play()
+                    save_recent_score(score)
+                    recent_score = score  # Update recent_score before resetting
+                    if score > high_score:
+                        high_score = score
+                        save_high_score(high_score)
+                    score = 0
+                    reset_game()
+                    break
+                
+            
+                # Adjust player position if collided with the ground
+            if player_y >= ground_y - player_size[1]:
+                player_y = ground_y - player_size[1]
+
+        
 
     # Draw everything
-    screen.fill((black))
     volume_number = load_volume()
+    sound_volume_number = load_sound_volume()
 
     # Title
     if game_state == MAIN_MENU:
-        screen.fill((black))
+        screen.fill((BLACK))
         display_frame(t)
         screen.blit(title_vid_surface, (0, 1))
-        draw_text("Geometry Crack", 130, def_col, MIN_SCREEN_WIDTH / 2, 100)
-        col_change(def_col, col_dir)
-        draw_text("Version: Alpha 2.0", 20, white, 90, 485)
+        draw_text("Geometry Crack", 130, DEF_COL, MIN_SCREEN_WIDTH / 2, 100)
+        col_change(DEF_COL, COL_DIR)
+        draw_text("Version: Alpha 2.0", 20, WHITE, 90, 485)
 
     if game_state == OPTIONS:
-        draw_text("Volume", 20, white, 614, grid_top_height)
-        volume_int = int(volume_number * 10)
-        draw_text(str([volume_int]), 20, white, 805, grid_top_height)
+        draw_text("Volume", 25, WHITE, 720, 135)
 
+        draw_text("Music", 20, WHITE, 614, 162)
+        song_volume_int = int(volume_number * 10)
+        draw_text(str(song_volume_int), 20, WHITE, 800, 162)
+        
+        draw_text("Sounds", 20, WHITE, 614, 191)
+        sound_volume_int = int(sound_volume_number * 10)
+        draw_text(str(sound_volume_int), 20, WHITE, 800, 191)
+    
     ui_manager.update(time_delta)
     ui_manager.draw_ui(screen)
 
-    if game_state == PLAYING:
-        pygame.draw.rect(screen, ground_color, (0, ground_y, ground_width, ground_height))
-
-        pygame.draw.rect(screen, player_color, (player_x, player_y, player_size[0], player_size[1]))
+    if game_state == PLAYING or game_state == PAUSED:
+        pygame.draw.rect(screen, ground_color, (0, ground_y, GROUND_WIDTH, GROUND_HEIGHT))
+        pygame.draw.rect(screen, player_config['player_color'], (player_x, player_y, player_size[0], player_size[1]))
+    
 
         for obstacle in obstacles:
-            pygame.draw.rect(screen, obstacle["color"], (obstacle["x"], obstacle["y"], OBSTACLE_WIDTH, OBSTACLE_HEIGHT))
-
+            pygame.draw.rect(screen, obstacle["color"], (obstacle["x"], obstacle["y"], OBSTACLE_WIDTH, obstacle["height"]))
+        
         if show_overlay:
             screen.blit(overlay_image, (0, 0))
 
-        score_text = font.render(f"Score: {score}", True, (white))
+        score_text = font.render(f"Score: {score}", True, (WHITE))
         screen.blit(score_text, (10, 10))
 
         high_score_text = font.render(f"Highscore: {high_score}", True, (255, 230, 0))
         screen.blit(high_score_text, (10, 70))
 
-        recent_score_text = font.render(f"Recent Score: {recent_score}", True, (white))
+        recent_score_text = font.render(f"Recent Score: {recent_score}", True, (WHITE))
         screen.blit(recent_score_text, (10, 40))
         
     

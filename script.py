@@ -19,6 +19,22 @@ ground_y = MIN_SCREEN_HEIGHT - GROUND_HEIGHT
 ground_color = (0, 0, 255)  # Blue
 
 # Obstacle Configuration
+
+class Obstacle:
+    def __init__(self, x, y, width, height, obstacle_type, color, is_moving=False):
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.type = obstacle_type
+        self.color = color
+        self.is_moving = is_moving
+
+    def update(self, speed):
+        self.x -= speed
+
+
+
 OBSTACLE_WIDTH = 20
 OBSTACLE_HEIGHT = 65
 OBSTACLE_SPEED = 9
@@ -44,6 +60,26 @@ COL_DIR= [-1, 1, -1]
 DEF_COL = [50, 100, 255]
 MINIMUM = 20
 MAXIMUM = 200
+
+# Coin Configuration
+COIN_SIZE = 10
+COIN_COLOR = (219, 214, 66)
+COIN_SPAWN_INTERVAL = 2000
+
+# Sound settings
+SOUND_VOLUME = 0.1
+CURRENT_VOLUME = 0.1
+
+music = pygame.mixer.music.load('./Music/song1.mp3')
+pygame.mixer.music.play(-1)
+pygame.mixer.music.set_volume(CURRENT_VOLUME)
+
+# Title video
+TARGET_WIDTH = MIN_SCREEN_WIDTH
+TARGET_HEIGHT = MIN_SCREEN_HEIGHT
+title_vid = mp.VideoFileClip("./Videos/title_screen.mp4")
+title_vid_width, title_vid_height = title_vid.size
+title_vid_surface = pygame.Surface((title_vid.size))
 
 # Screen Setup
 screen = pygame.display.set_mode((MIN_SCREEN_WIDTH, MIN_SCREEN_HEIGHT))
@@ -96,16 +132,9 @@ def load_sound_volume():
     except (FileNotFoundError, json.JSONDecodeError):
         return 0.1
     
-# Sound settings
-SOUND_VOLUME = 0.1
-CURRENT_VOLUME = 0.1
-
-music = pygame.mixer.music.load('./Music/song1.mp3')
-pygame.mixer.music.play(-1)
-pygame.mixer.music.set_volume(CURRENT_VOLUME)
-
 # Load initial Soundvolume
 SOUND_VOLUME = load_sound_volume()
+
 
 sound_effects = {
     'fu_sound': pygame.mixer.Sound('./Sounds/f_u.mp3'),
@@ -120,12 +149,6 @@ for sound in sound_effects:
     globals()[sound] = sound_obj
 
 
-# Title video
-TARGET_WIDTH = MIN_SCREEN_WIDTH
-TARGET_HEIGHT = MIN_SCREEN_HEIGHT
-title_vid = mp.VideoFileClip("title_screen.mp4")
-title_vid_width, title_vid_height = title_vid.size
-title_vid_surface = pygame.Surface((title_vid.size))
 
 # Player Configuration
 player_config = {
@@ -226,9 +249,50 @@ def set_obstacle_position(obstacle_type):
     if obstacle_type == JUMP_OVER:
         return ground_y - OBSTACLE_HEIGHT  # Ground level for "Jump Over"
     elif obstacle_type == DUCK_UNDER:
-        return ground_y - OBSTACLE_HEIGHT  # Ground level at start, then moves up if triggered
+        return ground_y - OBSTACLE_HEIGHT  # Ground level for "Duck Under"
     elif obstacle_type == STAY_STILL:
-        return ground_y - OBSTACLE_HEIGHT
+        return ground_y - OBSTACLE_HEIGHT  # Ground level for "Stay Still"
+
+class Coin:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.size = COIN_SIZE
+        self.color = COIN_COLOR
+
+    def update(self, speed):
+        self.x -= speed
+
+    def draw(self, screen):
+        pygame.draw.circle(screen, self.color, (self.x, self.y), self.size // 2)
+
+    def rect(self):
+        return pygame.Rect(self.x - self.size // 2, self.y - self.size // 2, self.size, self.size)
+
+def spawn_obstacle_with_coin():
+    # Spawn obstacle
+    height = random.randint(100, ground_y - OBSTACLE_HEIGHT - 50)
+    obstacle_type = random.choice([JUMP_OVER, DUCK_UNDER, STAY_STILL])
+    obstacle_color = DEFAULT_OBSTACLE_COLOR
+    new_obstacle = Obstacle(MIN_SCREEN_WIDTH, set_obstacle_position(obstacle_type), OBSTACLE_WIDTH, OBSTACLE_HEIGHT, obstacle_type, obstacle_color)
+    obstacles.append(new_obstacle)
+
+    # Spawn coin
+    spawn_coin = random.random() < 1  # 50% chance to spawn a coin with the obstacle
+    if spawn_coin:
+        coin_x = random.randint(100, MIN_SCREEN_WIDTH - 50)
+        coin_y = random.randint(400, ground_y - COIN_SIZE)
+
+        # Check if the coin is too close to the obstacle
+        obstacle_rect = pygame.Rect(new_obstacle.x, new_obstacle.y, OBSTACLE_WIDTH, OBSTACLE_HEIGHT)
+        coin_rect = pygame.Rect(coin_x, coin_y, COIN_SIZE, COIN_SIZE)
+        while coin_rect.colliderect(obstacle_rect):
+            coin_x = random.randint(100, MIN_SCREEN_WIDTH - 50)
+            coin_y = random.randint(400, ground_y - COIN_SIZE)
+            coin_rect = pygame.Rect(coin_x, coin_y, COIN_SIZE, COIN_SIZE)
+
+        coin = Coin(coin_x, coin_y)
+        coins.append(coin)
 
 # Reset Function
 def reset_game():
@@ -241,19 +305,16 @@ def reset_game():
     obstacles = []
     obstacle_type = random.choice([JUMP_OVER, DUCK_UNDER, STAY_STILL])
     obstacle_color = DEFAULT_OBSTACLE_COLOR
-    new_obstacle = {
-        "x": random.randint(MIN_SCREEN_WIDTH, MIN_SCREEN_WIDTH + 300),
-        "type": obstacle_type,
-        "y": set_obstacle_position(obstacle_type),
-        "color": obstacle_color,
-        "is_moving": False,
-        "height": OBSTACLE_HEIGHT
-    }
+    new_obstacle = Obstacle(MIN_SCREEN_WIDTH, set_obstacle_position(obstacle_type), OBSTACLE_WIDTH, OBSTACLE_HEIGHT, obstacle_type, obstacle_color, is_moving=False)
+
     obstacles.append(new_obstacle)
     recent_score = load_recent_score()
 
 # Initialize Game
 reset_game()
+coins = []
+coin_spawn_event = pygame.USEREVENT + 1
+pygame.time.set_timer(coin_spawn_event, COIN_SPAWN_INTERVAL)
 
 # Icon
 Icon = pygame.image.load('./Images/icon.png')
@@ -358,6 +419,8 @@ while run:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
              run = False
+        if event.type == coin_spawn_event:
+           spawn_obstacle_with_coin()
         ui_manager.process_events(event)
         if event.type == pygame.USEREVENT:
             if event.user_type == pygame_gui.UI_BUTTON_PRESSED:
@@ -506,8 +569,7 @@ while run:
             
         is_player_moving = keys[pygame.K_a] or keys[pygame.K_d] or keys[pygame.K_SPACE] or keys[pygame.K_s] or keys[pygame.K_DOWN]
         
-        # Update score
-        score += 1 
+      
         
         # Gravity and player movement
         player_velocity += player_config['gravity']
@@ -516,10 +578,27 @@ while run:
             player_y = ground_y - player_size[1]
             player_velocity = 0
 
-      
+        # Update obstacles and coins
+        for obstacle in obstacles:
+                obstacle_instance = Obstacle(obstacle.x, obstacle.y, OBSTACLE_WIDTH, obstacle.height, obstacle.type, obstacle.color, obstacle.is_moving)
+                obstacle_instance.update(OBSTACLE_SPEED)
+
+        for coin in coins:
+            coin.update(OBSTACLE_SPEED)
+            if coin.x + COIN_SIZE < 0:
+                coins.remove(coin)
+
+        # Collision detection with coins
+        player_rect = pygame.Rect(player_x, player_y, player_size[0], player_size[1])
+        for coin in coins:
+            if player_rect.colliderect(coin.rect()):
+                score += 10  # Increment score for collecting a coin
+                coins.remove(coin)
+                break
+
         # Obstacle creation and update
         new_obstacle = {}
-        if len(obstacles) == 0 or MIN_SCREEN_WIDTH - obstacles[-1].get("x", MIN_SCREEN_WIDTH) >= random.choice(MINIMUM_RANGE):
+        if len(obstacles) == 0 or MIN_SCREEN_WIDTH - obstacles[-1].x >= random.choice(MINIMUM_RANGE):
             obstacle_type = random.choice([JUMP_OVER, DUCK_UNDER, STAY_STILL])
             obstacle_color = DEFAULT_OBSTACLE_COLOR
             new_obstacle = {
@@ -535,26 +614,26 @@ while run:
         # Move obstacles
         for obstacle in obstacles:
             # Move obstacles
-            obstacle["x"] -= OBSTACLE_SPEED
+            obstacle.x -= OBSTACLE_SPEED
 
-            if obstacle["type"] == DUCK_UNDER and obstacle["x"] - player_x <= animation_config['animation_trigger_distance']:
-                obstacle["is_moving"] = True  # Trigger animation for duck under
-                obstacle["color"] = TRIGGERED_OBSTACLE_COLOR
+            if obstacle.type == DUCK_UNDER and obstacle.x - player_x <= animation_config['animation_trigger_distance']:
+                obstacle.is_moving = True  # Trigger animation for duck under
+                obstacle.color = TRIGGERED_OBSTACLE_COLOR
 
-            if obstacle["is_moving"] and obstacle["y"] > ground_y - animation_config['animation_target_y']:
-                obstacle["y"] -= animation_config['animation_speed']
+            if obstacle.is_moving and obstacle.y > ground_y - animation_config['animation_target_y']:
+                obstacle.y -= animation_config['animation_speed']
 
-            if obstacle["type"] == STAY_STILL and obstacle["x"] - player_x <= stay_config['color_change_distance']:
-                obstacle["color"] = TRIGGERED_STAY_COLOR
-                obstacle["y"] = ground_y - stay_config['triggered_height']  # Adjust position
-                obstacle["height"] = stay_config['triggered_height']  # Change height
+            if obstacle.type == STAY_STILL and obstacle.x - player_x <= stay_config['color_change_distance']:
+                obstacle.color = TRIGGERED_STAY_COLOR
+                obstacle.y = ground_y - stay_config['triggered_height']  # Adjust position
+                obstacle.height = stay_config['triggered_height']  # Change height
 
             # Collision detection
             player_rect = pygame.Rect(player_x, player_y, player_size[0], player_size[1])
-            obstacle_rect = pygame.Rect(obstacle["x"], obstacle["y"], OBSTACLE_WIDTH, obstacle["height"])
+            obstacle_rect = pygame.Rect(obstacle.x, obstacle.y, OBSTACLE_WIDTH, obstacle.height)
 
             if player_rect.colliderect(obstacle_rect):  # Collision check
-                if obstacle["type"] == STAY_STILL:
+                if obstacle.type == STAY_STILL:
                     if not is_player_moving and not is_ducking and player_y >= ground_y - player_config['normal_height']:
                         # Player is not moving, not ducking, and on the ground
                         pass  # Player survives collision
@@ -618,10 +697,13 @@ while run:
     if game_state == PLAYING or game_state == PAUSED:
         pygame.draw.rect(screen, ground_color, (0, ground_y, GROUND_WIDTH, GROUND_HEIGHT))
         pygame.draw.rect(screen, player_config['player_color'], (player_x, player_y, player_size[0], player_size[1]))
-    
+        
+        # Coins
+        for coin in coins:
+            coin.draw(screen)
 
         for obstacle in obstacles:
-            pygame.draw.rect(screen, obstacle["color"], (obstacle["x"], obstacle["y"], OBSTACLE_WIDTH, obstacle["height"]))
+            pygame.draw.rect(screen, obstacle.color, (obstacle.x, obstacle.y, OBSTACLE_WIDTH, obstacle.height))
         
         if show_overlay:
             screen.blit(overlay_image, (0, 0))

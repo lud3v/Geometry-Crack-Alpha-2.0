@@ -1,6 +1,7 @@
 import sys
 import random
 import json
+import pygame.draw
 import pygame, pygame_gui, pygame.transform
 import moviepy.editor as mp
 import threading
@@ -8,7 +9,7 @@ import threading
 pygame.init()
 
 # Constants
-
+run = True
 MIN_SCREEN_WIDTH = 1000
 MIN_SCREEN_HEIGHT = 500
 
@@ -21,7 +22,7 @@ ground_color = (0, 0, 255)  # Blue
 # Obstacle Configuration
 OBSTACLE_WIDTH = 20
 OBSTACLE_HEIGHT = 65
-OBSTACLE_SPEED = 9
+INITIAL_OBSTACLE_SPEED = 9
 TRIGGERED_OBSTACLE_COLOR = (222, 0, 255)
 TRIGGERED_STAY_COLOR = (0, 255, 0)
 DEFAULT_OBSTACLE_COLOR = (255, 0, 0)
@@ -33,6 +34,17 @@ STAY_STILL = 2
 COOLDOWN_TIME = 300
 last_button_click_time = 0
 previous_slider_value = None
+
+# Coin Configuration
+COIN_WIDTH = 10
+COIN_HEIGHT = 15
+COIN_SPEED = 10
+COIN_COLOR = (255, 215, 0)
+COIN_SPAWN_INTERVAL = 1000
+LAST_COIN_SPAWN_TIME = 0
+coins = []
+
+
 
 # colour
 BLACK = (0, 0, 0)
@@ -133,12 +145,30 @@ player_config = {
     'normal_height': 40,
     'duck_width': 40,
     'duck_height': 10,
+    'stretch_width': 10,
+    'stretch_height': 250,
+    'extended_stretch': 300,
     'player_x': 50,
+    'player_y': MIN_SCREEN_HEIGHT - 40,
     'player_color': (255, 255, 255),
     'player_velocity': 0,
     'jump_force': -15,
     'gravity': 1,
-    'is_ducking': False
+    'is_ducking': False,
+    'is_stretching': False,
+    'normal_state:': None
+}
+
+# Animation for Duck under Configuration
+animation_config = {
+    'animation_speed' : 3,
+    'animation_trigger_distance' : 285,  # Distance to trigger "Duck Under" animation
+    'animation_target_y' : ground_y - 380  # Final height for duck under
+}
+# Color change for Stay Stil obj
+stay_config = {
+    'color_change_distance' : 320,
+    'triggered_height' : 150
 }
 
 def update_video():
@@ -189,6 +219,7 @@ def load_high_score():
     except (FileNotFoundError, json.JSONDecodeError):
         return 0
 
+
 def save_recent_score(score):
     try:
         with open('data.json', 'r') as f:
@@ -206,20 +237,46 @@ def load_recent_score():
         with open('data.json', 'r') as f:
             return json.load(f).get('recent_score', 0)
     except (FileNotFoundError, json.JSONDecodeError):
+        return 0    
+    
+
+def save_coin_ammount(coin_ammount):
+    try:
+        with open('data.json', 'r') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        data = {}
+    
+    data['coins'] = coin_ammount
+
+    with open('data.json', 'w') as f:
+        json.dump(data, f)
+
+def load_coin_ammount():
+    try:
+        with open('data.json', 'r') as f:
+            return json.load(f).get('coins', 0)
+    except (FileNotFoundError, json.JSONDecodeError):
         return 0
 
-# Animation Configuration
-animation_config = {
-    'animation_speed' : 3,
-    'animation_trigger_distance' : 285,  # Distance to trigger "Duck Under" animation
-    'animation_target_y' : ground_y - 380  # Final height for duck under
-}
-# Color change for Stay Stil obj
-stay_config = {
-    'color_change_distance' : 320,
-    'triggered_height' : 150
-}
+coin_y_high = 370
+coin_y_low = 470
 
+# Define Spawn coins
+def spawn_coins():
+    coin_x = MIN_SCREEN_WIDTH
+    coin_y = random.randint(coin_y_high, coin_y_low)
+    coins.append({"x": coin_x, "y": coin_y})
+
+# Define movement from coins
+def move_and_draw_coins(screen):
+    global coins
+    for coin in coins:
+        coin["x"] -= COIN_SPEED
+        pygame.draw.rect(screen, COIN_COLOR, (coin["x"], coin["y"], COIN_WIDTH, COIN_HEIGHT))
+    
+    # Remove coins when off-screen
+    coins = [coin for coin in coins if coin["x"] + COIN_WIDTH > 0]
 
 # Define obstacle positions based on type
 def set_obstacle_position(obstacle_type):
@@ -232,12 +289,14 @@ def set_obstacle_position(obstacle_type):
 
 # Reset Function
 def reset_game():
-    global player_x, player_y, player_velocity, player_size, is_ducking, obstacles, score, recent_score
+    global player_x, player_y, player_velocity, player_size, is_ducking, is_stretching, obstacles, score, recent_score, coins, coin_ammount
     player_x = 50
     player_y = MIN_SCREEN_HEIGHT - player_config['normal_height']  # Ground level
     player_velocity = 0
     player_size = (player_config['normal_width'], player_config['normal_width'])  # Default size
     is_ducking = False  # Reset ducking state
+    is_stretching = False
+    coins = []
     obstacles = []
     obstacle_type = random.choice([JUMP_OVER, DUCK_UNDER, STAY_STILL])
     obstacle_color = DEFAULT_OBSTACLE_COLOR
@@ -266,6 +325,9 @@ overlay_image = pygame.transform.scale(overlay_image, (MIN_SCREEN_WIDTH, MIN_SCR
 # Score Loading
 high_score = load_high_score()
 recent_score = load_recent_score()
+
+# Coin ammount Loading
+coin_ammount = load_coin_ammount()
 
 # Flag to track whether rührei.png is shown
 show_overlay = False
@@ -323,7 +385,7 @@ quit_button = create_hidden_button(pygame.Rect((350, 310), (300, 50)), 'QUIT', u
 quit_button.show()
 options_button = create_hidden_button(pygame.Rect((350, 250), (300, 50)), 'OPTIONS', ui_manager)
 options_button.show()
-back_main_button = create_hidden_button(pygame.Rect((80, 30), (100, 50)), 'QUIT', ui_manager)
+back_main_button = create_hidden_button(pygame.Rect((80, 30), (100, 50)), 'BACK', ui_manager)
 # Pause Buttons
 higher_options_button = create_hidden_button(pygame.Rect((350, 160), (300, 50)), 'OPTIONS', ui_manager)
 back_game_button = create_hidden_button(pygame.Rect((80, 30), (100, 50)), 'BACK', ui_manager)
@@ -337,16 +399,20 @@ volume_slider = create_hidden_slider(pygame.Rect((volume_slidersx, 150), (140, 2
 sound_slider = create_hidden_slider(pygame.Rect((volume_slidersx, 180), (140, 20)), SOUND_VOLUME * 10, (0, 10), ui_manager)
 
 # Initialize Game
-run = True
+
 clock = pygame.time.Clock()
 score = 0
 
 
-#Timer Variables
+# Timer Variables
 t = 0.0
 dt = 1 / 30.0
 
-    
+
+player_rect = pygame.Rect(player_x, player_y, player_size[0], player_size[1])
+
+default_y_pos = player_rect.y
+
 # Main Game Loop
 while run:
     time_delta = clock.tick(60) / 1000.0  # Convert milliseconds to seconds
@@ -357,7 +423,7 @@ while run:
     # Event handling
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-             run = False
+            run = False
         ui_manager.process_events(event)
         if event.type == pygame.USEREVENT:
             if event.user_type == pygame_gui.UI_BUTTON_PRESSED:
@@ -406,7 +472,7 @@ while run:
                 elif event.ui_element == menu_button:
                     game_state = MAIN_MENU
 
-             
+            
                 if game_state == PLAYING:
                     start_button.visible = False
                     options_button.visible = False
@@ -485,7 +551,7 @@ while run:
                 is_ducking = True
                 player_size = (player_config['duck_width'], player_config['duck_height'])
                 player_y = ground_y - player_config['duck_height']
-        
+
         elif keys[pygame.K_p]:
             if keys[pygame.K_a]:
                 player_x -= 8
@@ -495,19 +561,19 @@ while run:
         elif keys[pygame.K_m]:
             show_overlay = True
             pygame.mixer.Sound.play(sound_effects['fu_sound'])
-
             
         elif event.type == pygame.KEYUP:
             if event.key == pygame.K_s or pygame.K_DOWN:
                 is_ducking = False
-                player_size = (player_config['normal_width'], player_config['normal_width'])
+                player_size = (player_config['normal_width'], player_config['normal_height'])               
+
             elif event.key == pygame.K_m:
                 show_overlay = False
             
         is_player_moving = keys[pygame.K_a] or keys[pygame.K_d] or keys[pygame.K_SPACE] or keys[pygame.K_s] or keys[pygame.K_DOWN]
         
         # Update score
-        score += 1 
+        score += 10
         
         # Gravity and player movement
         player_velocity += player_config['gravity']
@@ -516,7 +582,7 @@ while run:
             player_y = ground_y - player_size[1]
             player_velocity = 0
 
-      
+    
         # Obstacle creation and update
         new_obstacle = {}
         if len(obstacles) == 0 or MIN_SCREEN_WIDTH - obstacles[-1].get("x", MIN_SCREEN_WIDTH) >= random.choice(MINIMUM_RANGE):
@@ -532,10 +598,27 @@ while run:
             }
             obstacles.append(new_obstacle)
         
+        # Coin spawning
+        current_time = pygame.time.get_ticks()
+        if current_time - LAST_COIN_SPAWN_TIME > COIN_SPAWN_INTERVAL:
+            spawn_coins()
+            LAST_COIN_SPAWN_TIME = current_time
+
+        # Move and draw coins
+        move_and_draw_coins(screen)
+
+        # Collision detection for coins
+        
+        for coin in coins:
+            coin_rect = pygame.Rect(coin["x"], coin["y"], COIN_WIDTH, COIN_HEIGHT)
+            if player_rect.colliderect(coin_rect):
+                coins.remove(coin)
+                coin_ammount += 1
+
         # Move obstacles
         for obstacle in obstacles:
             # Move obstacles
-            obstacle["x"] -= OBSTACLE_SPEED
+            obstacle["x"] -= INITIAL_OBSTACLE_SPEED
 
             if obstacle["type"] == DUCK_UNDER and obstacle["x"] - player_x <= animation_config['animation_trigger_distance']:
                 obstacle["is_moving"] = True  # Trigger animation for duck under
@@ -559,13 +642,14 @@ while run:
                         # Player is not moving, not ducking, and on the ground
                         pass  # Player survives collision
                     else:
-                        # Player is moving or ducking
+                        # Player is moving or ducking or stretching
                         sound_effects['death'].play()
                         save_recent_score(score)
                         recent_score = score  # Update recent_score before resetting
                         if score > high_score:
                             high_score = score
                             save_high_score(high_score)
+                        save_coin_ammount(coin_ammount)
                         score = 0
                         reset_game()
                         break
@@ -577,6 +661,7 @@ while run:
                     if score > high_score:
                         high_score = score
                         save_high_score(high_score)
+                    save_coin_ammount(coin_ammount)
                     score = 0
                     reset_game()
                     break
@@ -599,7 +684,7 @@ while run:
         screen.blit(title_vid_surface, (0, 1))
         draw_text("Geometry Crack", 130, DEF_COL, MIN_SCREEN_WIDTH / 2, 100)
         col_change(DEF_COL, COL_DIR)
-        draw_text("Version: Alpha 2.0", 20, WHITE, 90, 485)
+        draw_text("Version: Alpha 3.0", 20, WHITE, 90, 485)
 
     if game_state == OPTIONS:
         draw_text("Volume", 25, WHITE, 720, 135)
@@ -618,13 +703,14 @@ while run:
     if game_state == PLAYING or game_state == PAUSED:
         pygame.draw.rect(screen, ground_color, (0, ground_y, GROUND_WIDTH, GROUND_HEIGHT))
         pygame.draw.rect(screen, player_config['player_color'], (player_x, player_y, player_size[0], player_size[1]))
-    
+        
 
         for obstacle in obstacles:
             pygame.draw.rect(screen, obstacle["color"], (obstacle["x"], obstacle["y"], OBSTACLE_WIDTH, obstacle["height"]))
         
         if show_overlay:
             screen.blit(overlay_image, (0, 0))
+
 
         score_text = font.render(f"Score: {score}", True, (WHITE))
         screen.blit(score_text, (10, 10))
@@ -634,7 +720,9 @@ while run:
 
         recent_score_text = font.render(f"Recent Score: {recent_score}", True, (WHITE))
         screen.blit(recent_score_text, (10, 40))
-        
+
+        coin_text = font.render(f"Coins: {coin_ammount}", True, (255, 230, 0))
+        screen.blit(coin_text, (850, 10))    
     
     pygame.display.flip()
 video_thread.join()
